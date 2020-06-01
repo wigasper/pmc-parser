@@ -9,6 +9,8 @@ import unicodedata
 import traceback
 from pathlib import Path
 
+from tqdm import tqdm
+
 '''
 text_elements is a tuple of (title, abstract, body)
 '''
@@ -67,12 +69,25 @@ def remove_tags(string):
     return tag_regex.sub("", string)
 
 '''
-Removes empty lines
+Removes empty lines. Currently also has logic to remove non-sentence 
+lines (lines with no whitespace or with less than 8 
+whitespace-separated-elements)
+
+Note: this is all quite arbitrary
 '''
 def remove_empty_lines(string):
     string = string.split("\n")
     string = [line for line in string if re.search("\S", line)]
     
+    for index, line in enumerate(string):
+        line = line.split()
+        if len(line) > 7:
+            string[index] = " ".join(line)
+        else:
+            string[index] = ""
+
+    string = [line for line in string if line]
+
     return "\n".join(string)
 
 
@@ -83,7 +98,7 @@ returns a string without tags and HTML entities
 '''
 def parse_abstract(abstract):
     # remove title
-    abstract = re.sub("\s*<title>.*</title>", "", abstract)
+    abstract = re.sub("\s*<title>[^<]*</title>", "", abstract)
     
     # remove tags
     abstract = remove_tags(abstract)
@@ -100,14 +115,24 @@ def parse_abstract(abstract):
 Parses the body section of the XML
 '''
 def parse_body(body):
+    # make one big block of text to make everything easier
+    body = "|$|$|".join(body.split("\n"))
+    
     # remove text that is in tables
+    body = re.sub("<sup[^<]*</sup>", "", body)
     body = re.sub("<td.*</td>", "", body)
+    body = re.sub("<th.*</th>", "", body)
+
+    # remove LaTeX
+    body = re.sub("\\\documentclass\[.*\\\end\{document\}", "", body)
     # remove titles
-    body = re.sub("\s*<title>.*</title>", "", body)
+    body = re.sub("\s*<title>[^<]*</title>", "", body)
 
     # remove figure labels
-    body = re.sub("\s*<label>.*</label>", "", body)
+    body = re.sub("\s*<label>[^<]*</label>", "", body)
     
+    body = "\n".join(body.split("|$|$|"))
+
     # remove tags
     body = remove_tags(body)
 
@@ -128,14 +153,14 @@ def parse_xml(fp):
     clean_abstract = ""
     clean_body = ""
 
-    title_group_start = re.compile("^\s*<title-group>\s*$")
-    title_group_stop = re.compile("^\s*</title-group>\s*$")
+    title_group_start = re.compile("^\s*<title-group")
+    title_group_stop = re.compile("^\s*</title-group")
     title_regex = re.compile("\s*<article-title>(.*)</article-title>")
 
-    abstract_start = re.compile("\s*<abstract>")
+    abstract_start = re.compile("\s*<abstract")
     abstract_stop = re.compile("\s*</abstract>")
 
-    body_start = re.compile("\s*<body>")
+    body_start = re.compile("\s*<body")
     body_stop = re.compile("\s*</body>")
 
     abstract = []
@@ -231,7 +256,7 @@ if __name__ == "__main__":
     input_files = get_file_list(args.input)
 
     logger.debug("Starting parse loop")
-    for input_file in input_files:
+    for input_file in tqdm(input_files):
         # clean_text is a tuple (title, abs, body)
         clean_text = parse_xml(input_file)
         pmc_id = input_file.split("/")[-1].split(".")[0]
