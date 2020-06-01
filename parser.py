@@ -2,8 +2,10 @@
 import os
 import re
 import sys
+import html
 import argparse
 import logging
+import unicodedata
 import traceback
 from pathlib import Path
 
@@ -24,28 +26,49 @@ def write_xml(fp, text_elements):
         out.write(text_elements[2])
         out.write("\n</body>\n")
 
-
-def remove_hex(string):
-    hex_regex = re.compile("&#x.*;")
+'''
+Takes an HTML entity and attempts to parse it into a UTF-8 
+character
+'''
+def parse_entity(match_obj):
+    logger = logging.getLogger(__name__)
+    symbol = ""
     
-    # sub in quotation marks
-    string = re.sub("&#x201C;", '"', string)
-    string = re.sub("&#x201D;", '"', string)
+    if match_obj.group(0):
+        # try to convert
+        try:
+            symbol = html.unescape(match_obj.group(0)).encode("utf-8").decode()
+            symbol = unicodedata.normalize("NFKC", symbol)
+        
+        except Exception as e:
+            trace = traceback.format_exc()
+            logger.error(repr(e))
+            logger.critical(trace)
+            symbol = ""
+    
+    return symbol
 
-    # sub in spaces for the non-breaking space code
-    string = re.sub("&#xA0;", " ", string)
+'''
+Deal with HTML entity codes
+'''
+def remove_codes(string):
+    entity_regex = re.compile("&[^;\s]*;")
 
-    # remove all other hex unicode
-    string = hex_regex.sub("", string)
+    string = entity_regex.sub(parse_entity, string)
 
     return string
 
-# Removes XML tags from a string
+'''
+Removes tags from a string
+'''
 def remove_tags(string):
     tag_regex = re.compile("<[^>]+>")
 
     return tag_regex.sub("", string)
 
+'''
+Removes empty lines
+'''
 def remove_empty_lines(string):
     string = string.split("\n")
     string = [line for line in string if re.search("\S", line)]
@@ -54,8 +77,9 @@ def remove_empty_lines(string):
 
 
 '''
-abstract should be a string, can contain tags and hexadecimal unicode
-returns a string without HTML tags and hexadecimal unicode
+Parses the abstract section of the XML
+abstract should be a string, can contain tags and HTML entities
+returns a string without tags and HTML entities
 '''
 def parse_abstract(abstract):
     # remove title
@@ -65,13 +89,19 @@ def parse_abstract(abstract):
     abstract = remove_tags(abstract)
 
     # remove hexadecimal unicode
-    abstract = remove_hex(abstract)
+    abstract = remove_codes(abstract)
 
     abstract = remove_empty_lines(abstract)
 
     return abstract
 
+
+'''
+Parses the body section of the XML
+'''
 def parse_body(body):
+    # remove text that is in tables
+    body = re.sub("<td.*</td>", "", body)
     # remove titles
     body = re.sub("\s*<title>.*</title>", "", body)
 
@@ -81,14 +111,19 @@ def parse_body(body):
     # remove tags
     body = remove_tags(body)
 
-    # remove hexadecimal unicode
-    body = remove_hex(body)
+    # remove unicode
+    body = remove_codes(body)
 
     body = remove_empty_lines(body)
 
     return body
 
-def parse_xml(fp, logger):
+'''
+Parses PMC full text XMLs
+'''
+def parse_xml(fp):
+    logger = logging.getLogger(__name__)
+
     title = ""
     clean_abstract = ""
     clean_body = ""
@@ -141,6 +176,9 @@ def parse_xml(fp, logger):
         logger.error(repr(e))
         logger.critical(trace)
 
+    title = remove_codes(title)
+    title = remove_tags(title)
+
     return (title, clean_abstract, clean_body)
 
 
@@ -150,7 +188,7 @@ def get_file_list(directory):
     
     return [os.path.join(absolute_path, f) for f in files]
 
-def get_logger(debug=False, quiet=False):
+def initialize_logger(debug=False, quiet=False):
     level = logging.INFO
     if debug:
         level = logging.DEBUG
@@ -186,16 +224,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    logger = get_logger(args.debug, args.quiet)
+    logger = initialize_logger(args.debug, args.quiet)
 
-    logger.info("Starting parser, input dir: {input}, output dir: {output}")
+    logger.info(f"Starting parser, input dir: {args.input}, output dir: {args.output}")
     logger.debug("Getting file list")
     input_files = get_file_list(args.input)
 
     logger.debug("Starting parse loop")
     for input_file in input_files:
         # clean_text is a tuple (title, abs, body)
-        clean_text = parse_xml(input_file, logger)
+        clean_text = parse_xml(input_file)
         pmc_id = input_file.split("/")[-1].split(".")[0]
         write_xml(f"{args.output}/{pmc_id}.xml", clean_text)
         
