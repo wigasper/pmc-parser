@@ -23,7 +23,7 @@ while read pmc_id; do
 
 	# track request time
 	req_start=$(date +%s.%N)
-	wget -O $output_path $request_url
+	wget -o pull.errs -nv -O $output_path $request_url
 	elapsed=$(date +%s.%N --date="$req_start seconds ago")
 
 	# avoid making more than 10 requests per second
