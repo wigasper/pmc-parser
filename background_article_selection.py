@@ -128,7 +128,7 @@ if __name__ == "__main__":
 
     # init
     current_shannon = 0.0
-    shannon_floor = 4.0
+    shannon_floor = 4.4
     selected_articles = []
     logger_update_interval = 2500
 
