@@ -4,11 +4,13 @@
 
 mkdir -p pmc_xmls
 
-export PREFIX="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id="
-export SUFFIX="&rettype=xml&retmode=text"
+PREFIX="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id="
+SUFFIX="&rettype=xml&retmode=text"
 
 # ensure no whitespace or newlines in key
 NCBI_API_KEY=$(cat ncbi.key | sed -E 's#(\S+)\n#\1#')
+
+elapsed="0"
 
 while read pmc_id; do
 	# ensure there is no extraneous whitespace or newlines
@@ -18,10 +20,9 @@ while read pmc_id; do
 	
 	output_path=$(echo -n $pmc_id | sed -E 's#(\S+)#pmc_xmls/\1.xml#')
 	
-	export elapsed="0"
-
 	# Avoid making redundant requests
-	if !([ -e $output_path ]); then
+	if !([ -e $output_path ])
+	then
 		# track request time
 		req_start=$(date +%s.%N)
 		wget -o pull.errs -nv -O $output_path $request_url
