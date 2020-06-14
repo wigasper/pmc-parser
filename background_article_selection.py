@@ -108,7 +108,7 @@ def initialize_logger(debug=False, quiet=False):
 
 
 if __name__ == "__main__":
-    logger = initialize_logger()
+    logger = initialize_logger(debug=True)
     logger.info("New run")
 
     term_trees = get_term_top_ancestor_nodes()
@@ -121,42 +121,79 @@ if __name__ == "__main__":
     
     # all PMCIDs in the OA subset
     pmc_ids = list(pmc_doc_terms.keys())
+    logger.debug(f"length pmc_ids: {len(pmc_ids)}")
 
-    # shuffle the list
+    # set seed for reproducibility
     random.seed(42)
-    random.shuffle(pmc_ids)
 
     # init
+    # number of articles desired
+    num_articles_required = 150000
+    # rolling current Shannon index for the article set
     current_shannon = 0.0
+    # minimum Shannon index allowed
     shannon_floor = 4.4
+    # list for selection articles
     selected_articles = []
-    logger_update_interval = 2500
+    # debug update after this many articles are checked
+    logger_update_interval = 20000
+    # get unused articles
+    unused_articles = [pmc_id for pmc_id in pmc_ids]
+    # number of passes to make
+    max_passes = 3
+    # current pass
+    num_passes = 0
 
     # start adding to selected_articles
-    for index, pmc_id in enumerate(pmc_ids):
-        new_counts = {key: val for key, val in parent_node_counts.items()}
-        for term in pmc_doc_terms[pmc_id]:
-            for node in term_trees[term]:
-                new_counts[node] += 1
-
-        next_shannon = shannon(new_counts)
+    while len(selected_articles) <= num_articles_required and num_passes < max_passes: 
+        # pool of potential articles
+        putative_article_pool = [pmc_id for pmc_id in unused_articles]
+        # reset, will be added to for additional passes
+        unused_articles = []
+        # shuffle the list
+        random.shuffle(putative_article_pool)
         
-        if (next_shannon > current_shannon) or next_shannon > shannon_floor:
-            current_shannon = next_shannon
-            selected_articles.append(pmc_id)
+        logger.debug(f"length article_pool: {len(putative_article_pool)}")
 
+        for index, pmc_id in enumerate(putative_article_pool):
+            new_counts = {key: val for key, val in parent_node_counts.items()}
             for term in pmc_doc_terms[pmc_id]:
                 for node in term_trees[term]:
-                    parent_node_counts[node] += 1
-        
-        # Update every update_interval
-        if index % logger_update_interval == 0:
-            logger.info(f"Current shannon: {current_shannon}, {len(selected_articles)} articles")
+                    new_counts[node] += 1
 
-        if len(selected_articles) > 150000:
-            break
+            next_shannon = shannon(new_counts)
+            
+            if (next_shannon > current_shannon) or next_shannon > shannon_floor:
+                current_shannon = next_shannon
+                selected_articles.append(pmc_id)
+
+                for term in pmc_doc_terms[pmc_id]:
+                    for node in term_trees[term]:
+                        parent_node_counts[node] += 1
+            else:
+                unused_articles.append(pmc_id)
+            
+            # Update every update_interval
+            if index % logger_update_interval == 0:
+                debug_msg_0 = f"Current Shannon: {current_shannon}"
+                debug_msg_1 = f"{len(selected_articles)} articles"
+                debug_msg_2 = f"index: {index}"
+                logger.debug(f"{debug_msg_0}, {debug_msg_1}, {debug_msg_2}")
+            
+            if len(selected_articles) > num_articles_required:
+                break
+        
+        num_passes += 1
+        logger.info(f"completed {Num_passes} passes, Shannon: {current_shannon}")
     
     logger.info(f"Final selection: {len(selected_articles)} articles")
+    logger.info(f"Final Shannon: {current_shannon}")
+    
+    # Do some checking here
+    deduped_articles = list(dict.fromkeys(selected_articles))
+    if len(deduped_articles) != len(selected_articles):
+        logger.error("Duplicates in selected article set")
+
     with open("selected_articles", "w") as out:
         for article in selected_articles:
             out.write(f"{article}\n")
