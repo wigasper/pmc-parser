@@ -184,7 +184,7 @@ if __name__ == "__main__":
                 break
         
         num_passes += 1
-        logger.info(f"completed {Num_passes} passes, Shannon: {current_shannon}")
+        logger.info(f"completed {num_passes} passes, Shannon: {current_shannon}")
     
     logger.info(f"Final selection: {len(selected_articles)} articles")
     logger.info(f"Final Shannon: {current_shannon}")
