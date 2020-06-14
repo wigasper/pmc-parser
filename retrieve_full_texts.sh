@@ -25,7 +25,7 @@ while read pmc_id; do
 	then
 		# track request time
 		req_start=$(date +%s.%N)
-		wget -o pull.errs -nv -O $output_path $request_url
+		curl -o $output_path $request_url 2> curl.err
 		elapsed=$(date +%s.%N --date="$req_start seconds ago")
 	fi
 
