@@ -82,9 +82,45 @@ def shannon(node_counts):
     pass
 
 '''
+Returns the Shannon index for a random sample of articles using 
+the technique in the main routine
+'''
+def random_sample_shannon(sample_set_size):
+    logger = initialize_logger(name="random_sample_shannon")
+    random.seed(42)
+
+    term_trees = get_term_top_ancestor_nodes()
+    pmc_doc_terms = get_pmcid_mesh_terms()
+
+    # parent nodes are the parent nodes on the MeSH graph
+    parent_nodes = [node for key, node_list in term_trees.items() for node in node_list]
+    parent_nodes = list(dict.fromkeys(parent_nodes))
+    parent_node_counts = {node: 0 for node in parent_nodes}
+    
+    # all PMCIDs in the OA subset
+    pmc_ids = list(pmc_doc_terms.keys())
+    logger.debug(f"length pmc_ids: {len(pmc_ids)}")
+    
+    pmc_ids = random.sample(pmc_ids, sample_set_size)
+
+    for pmc_id in pmc_ids:
+        for term in pmc_doc_terms[pmc_id]:
+            for node in term_trees[term]:
+                parent_node_counts[node] += 1
+    
+    shannon_index = shannon(parent_node_counts)
+
+    logger.info(f"Random sample size: {sample_set_size}")
+    logger.info(f"Shannon index: {shannon_index}")
+
+    return shannon_index
+
+
+'''
 Get a logger
 '''
-def initialize_logger(debug=False, quiet=False):
+def initialize_logger(name="background_article_selection", debug=False, 
+                    quiet=False):
     level = logging.INFO
     if debug:
         level = logging.DEBUG
@@ -92,7 +128,7 @@ def initialize_logger(debug=False, quiet=False):
     # Set up logging
     logger = logging.getLogger(__name__)
     logger.setLevel(level)
-    handler = logging.FileHandler("background_article_selection.log")
+    handler = logging.FileHandler(f"{name}.log")
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
