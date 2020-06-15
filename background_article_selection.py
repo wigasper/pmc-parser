@@ -28,7 +28,7 @@ subset to a PMID
 '''
 def get_oa_id_map():
     oa_articles = {}
-    with open("oa_file_list.csv", "r") as handle:
+    with open("oa_last_10_years.csv", "r") as handle:
         for line in handle:
             if not line.startswith("File"):
                 line = line.split(",")
@@ -115,6 +115,16 @@ def random_sample_shannon(sample_set_size):
 
     return shannon_index
 
+def write_ftp_paths(pmcids):
+    article_set = set(pmcids)
+
+    with open("oa_last_10_years.csv", "r") as handle:
+        with open("selected_articles_ftp_paths", "w") as out:
+            for line in handle:
+                line = line.split(",")
+                if line[2] in article_set:
+                    out.write(line[0])
+                    out.write("\n")
 
 '''
 Get a logger
@@ -234,4 +244,4 @@ if __name__ == "__main__":
         for article in selected_articles:
             out.write(f"{article}\n")
 
-    
+    write_ftp_paths(selected_articles) 
