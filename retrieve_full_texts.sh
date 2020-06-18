@@ -18,7 +18,7 @@ while read pmc_id; do
 	
 	request_url="$PREFIX$pmc_id&api_key=$NCBI_API_KEY$SUFFIX"
 	
-	output_path=$(echo -n $pmc_id | sed -E 's#(\S+)#pmc_xmls/\1.xml#')
+	output_path="pmc_xmls/specialized_dataset/$pmc_id.xml"
 	
 	# Avoid making redundant requests
 	if !([ -e $output_path ])
@@ -34,4 +34,4 @@ while read pmc_id; do
 		wait_time=$(echo "0.1-$elapsed" | bc)
 		sleep $wait_time
 	fi
-done < selected_articles
+done < specialized_articles
