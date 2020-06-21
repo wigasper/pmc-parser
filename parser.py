@@ -3,30 +3,41 @@ import os
 import re
 import sys
 import html
+import json
 import argparse
 import logging
 import unicodedata
 import traceback
 from pathlib import Path
 
-from tqdm import tqdm
-
 '''
-text_elements is a tuple of (title, abstract, body)
+text_elements is a dict containing text elements like
+title, abstract, and body. Writes output in an XML-like format
 '''
 def write_xml(fp, text_elements):
-    with open(fp, "w") as out:
-        out.write("<title>\n")
-        out.write(text_elements[0])
-        out.write("\n</title>\n")
+    with open(f"{fp}.xml", "w") as out:
+        for element in text_elements.keys():
+            out.write(f"<{element}>\n")
+            out.write(text_elements[element])
+            out.write(f"\n</{element}>\n")
 
-        out.write("<abstract>\n")
-        out.write(text_elements[1])
-        out.write("\n</abstract>\n")
+'''
+text_elements is a dict containing text elements like 
+title, abstract, and body. Writes output in JSON
+'''
+def write_json(fp, text_elements):
+    with open(f"{fp}.json", "w") as out:
+        json.dump(text_elements, out)
 
-        out.write("<body>\n")
-        out.write(text_elements[2])
-        out.write("\n</body>\n")
+'''
+text_elements is a dict containing text elements like
+title, abstract, and body. Writes output in a plain text
+format
+'''
+def write_plain_text(fp, text_elements):
+    with open(f"{fp}.txt", "w") as out:
+        for element in text_elements.keys():
+            out.write(f"{element.upper()}: {text_elements[element]}\n")
 
 '''
 Takes an HTML entity and attempts to parse it into a UTF-8 
@@ -113,6 +124,8 @@ def parse_abstract(abstract):
 
 '''
 Parses the body section of the XML
+body should be a string, can contain tags and HTML entities
+returns a string
 '''
 def parse_body(body):
     # make one big block of text to make everything easier
@@ -144,7 +157,7 @@ def parse_body(body):
     return body
 
 '''
-Parses PMC full text XMLs
+Parses a single PMC full text XML
 '''
 def parse_xml(fp):
     logger = logging.getLogger(__name__)
@@ -204,15 +217,21 @@ def parse_xml(fp):
     title = remove_codes(title)
     title = remove_tags(title)
 
-    return (title, clean_abstract, clean_body)
+    return {"title": title, "abstract": clean_abstract, "body": clean_body}
 
-
+'''
+returns a list of absolute filepaths for every file in a directory
+'''
 def get_file_list(directory):
     absolute_path = Path(directory).resolve()
     files = os.listdir(directory)
-    
-    return [os.path.join(absolute_path, f) for f in files]
+    absolute_fps = [os.path.join(absolute_path, f) for f in files]
 
+    return [fp for fp in absolute_fps if os.path.isfile(fp)]
+
+'''
+returns a logger
+'''
 def initialize_logger(debug=False, quiet=False):
     level = logging.INFO
     if debug:
@@ -235,12 +254,86 @@ def initialize_logger(debug=False, quiet=False):
 
     return logger
 
+'''
+Validates the section names requested in the input
+'''
+def validate_sections(sections_in):
+    logger = logging.getLogger(__name__)
+
+    valid_sections = ["title", "abstract", "body"]
+    sections = [sec for sec in sections_in if sec in valid_sections]
+    
+    if len(sections) == 0:
+        raise ValueError("No valid text sections were passed")
+
+    if len(sections_in) > len(sections):
+        excluded = [sec for sec in sections_in if sec not in sections]
+        logger.info(f"The following sections are not valid: {excluded}")
+
+    return sections
+
+'''
+Maps the output format string to a function
+'''
+def get_output_function(output_format):
+    logger = logging.getLogger(__name__)
+
+    function_map = {"xml": write_xml,
+                    "json": write_json,
+                    "text": write_plain_text}
+
+    if output_format not in function_map.keys():
+        logger.warning("Requested output format not supported, defaulting to XML")
+        output_format = "xml"
+
+    return function_map[output_format]
+
+'''
+Main driver function
+'''
+def parse_xmls(input_dir, output_dir, output_format="xml", 
+        sections=["title", "abstract", "body"], quiet=False, debug=False):
+    logger = initialize_logger(debug, quiet)
+
+    sections = validate_sections(sections)
+    
+
+    logger.info(f"Starting parser, input dir: {input_dir}, output dir: {output_dir}")
+    logger.debug("Getting file list")
+    
+    input_files = get_file_list(input_dir)
+
+    output_function = get_output_function(output_format)
+    
+    logger.debug("Starting parse loop")
+    for input_file in input_files:
+        clean_text_temp = parse_xml(input_file)
+        
+        clean_text = {}
+        for section in sections:
+            clean_text[section] = clean_text_temp[section]
+
+        pmc_id = input_file.split("/")[-1].split(".")[0]    
+        output_function(f"{output_dir}/{pmc_id}", clean_text)
+        
+'''
+For command line usage
+'''
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input", help="Directory containing PMC XML files",
                         required=True)
-    parser.add_argument("-o", "--output", help="Directory to write output XML files to",
+    parser.add_argument("-o", "--output", help="Directory to write output files to",
                         required=True)
+    parser.add_argument("-f", "--output-format", help="Output format, currently " \
+                        "XML, JSON, and plain text are supported and can be specified " \
+                        "using the strings 'xml', 'json', or 'text'", default="xml")
+    parser.add_argument("-s", "--sections", help="Specify the desired sections for " \
+                        "output. Sections should be follow the '-s' or '--sections' " \
+                        "argument name and be space delimited, for example: " \
+                        "'-s title abstract'. Sensitive to order. By default " \
+                        "parses titles, abstracts, and body text", nargs="*", 
+                        default=["title", "abstract", "body"])
     parser.add_argument("-q", "--quiet", help="Suppress printing of log messages to STDOUT. " \
                         "Warning: exceptions will not be printed to console", 
                         action="store_true", default=False)
@@ -248,17 +341,6 @@ if __name__ == "__main__":
                         default=False)
 
     args = parser.parse_args()
-
-    logger = initialize_logger(args.debug, args.quiet)
-
-    logger.info(f"Starting parser, input dir: {args.input}, output dir: {args.output}")
-    logger.debug("Getting file list")
-    input_files = get_file_list(args.input)
-
-    logger.debug("Starting parse loop")
-    for input_file in tqdm(input_files):
-        # clean_text is a tuple (title, abs, body)
-        clean_text = parse_xml(input_file)
-        pmc_id = input_file.split("/")[-1].split(".")[0]
-        write_xml(f"{args.output}/{pmc_id}.xml", clean_text)
-        
+    
+    parse_xmls(args.input, args.output, args.output_format, args.sections, 
+                args.quiet, args.debug)   
