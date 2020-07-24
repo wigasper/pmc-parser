@@ -78,8 +78,6 @@ def shannon(node_counts):
 
     return log(1 / product)
 
-    
-    pass
 
 '''
 Returns the Shannon index for a random sample of articles using 
